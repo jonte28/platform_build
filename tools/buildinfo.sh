@@ -47,15 +47,16 @@ if [ "$TARGET_UNIFIED_DEVICE" == "" ] ; then
   echo "ro.build.product=$TARGET_DEVICE"
   echo "ro.product.model=$PRODUCT_MODEL"
   echo "ro.product.device=$TARGET_DEVICE"
-  echo "# Do not try to parse description, fingerprint, or thumbprint"
+  echo "# Do not try to parse description or fingerprint"
   echo "ro.build.description=$PRIVATE_BUILD_DESC"
   echo "ro.build.fingerprint=$BUILD_FINGERPRINT"
-  if [ -n "$BUILD_THUMBPRINT" ] ; then
-    echo "ro.build.thumbprint=$BUILD_THUMBPRINT"
-  fi
 fi
-echo "ro.build.characteristics=$TARGET_AAPT_CHARACTERISTICS"
-
+if [ -n "$BUILD_THUMBPRINT" ] ; then
+  echo "# Do not try to parse thumbprint"
+  echo "ro.build.thumbprint=$BUILD_THUMBPRINT"
+fi
 echo "ro.bs.device=$BS_DEVICE"
+echo "ro.bs.model=$PRODUCT_MODEL"
+echo "ro.build.characteristics=$TARGET_AAPT_CHARACTERISTICS"
 
 echo "# end build properties"

@@ -37,13 +37,8 @@ define check-product-copy-files
 $(if $(filter %.apk, $(call word-colon, 2, $(1))),$(error \
     Prebuilt apk found in PRODUCT_COPY_FILES: $(1), use BUILD_PREBUILT instead!))
 endef
-# filter out the duplicate <source file>:<dest file> pairs.
-unique_product_copy_files_pairs :=
-$(foreach cf,$(PRODUCT_COPY_FILES), \
-    $(if $(filter $(unique_product_copy_files_pairs),$(cf)),,\
-        $(eval unique_product_copy_files_pairs += $(cf))))
 unique_product_copy_files_destinations :=
-$(foreach cf,$(unique_product_copy_files_pairs), \
+$(foreach cf,$(PRODUCT_COPY_FILES), \
     $(eval _src := $(call word-colon,1,$(cf))) \
     $(eval _dest := $(call word-colon,2,$(cf))) \
     $(if $(filter $(unique_product_copy_files_destinations),$(_dest)), \
@@ -54,7 +49,6 @@ $(foreach cf,$(unique_product_copy_files_pairs), \
             $(eval $(call copy-one-file,$(_src),$(_fulldest)))) \
         $(eval ALL_DEFAULT_INSTALLED_MODULES += $(_fulldest)) \
         $(eval unique_product_copy_files_destinations += $(_dest))))
-unique_product_copy_files_pairs :=
 unique_product_copy_files_destinations :=
 
 # -----------------------------------------------------------------
@@ -116,22 +110,8 @@ endif
 BUILD_VERSION_TAGS += $(BUILD_KEYS)
 BUILD_VERSION_TAGS := $(subst $(space),$(comma),$(sort $(BUILD_VERSION_TAGS)))
 
-# If the final fingerprint should be different than what was used by the build system,
-# we can allow that too.
-ifeq ($(TARGET_VENDOR_PRODUCT_NAME),)
-TARGET_VENDOR_PRODUCT_NAME := $(TARGET_PRODUCT)
-endif
-
-ifeq ($(TARGET_VENDOR_DEVICE_NAME),)
-TARGET_VENDOR_DEVICE_NAME := $(TARGET_DEVICE)
-endif
-
-ifeq ($(TARGET_VENDOR_RELEASE_BUILD_ID),)
-TARGET_VENDOR_RELEASE_BUILD_ID := $(BUILD_NUMBER)
-endif
-
 # A human-readable string that descibes this build in detail.
-build_desc := $(TARGET_VENDOR_PRODUCT_NAME)-$(TARGET_BUILD_VARIANT) $(PLATFORM_VERSION) $(BUILD_ID) $(TARGET_VENDOR_RELEASE_BUILD_ID) $(BUILD_VERSION_TAGS)
+build_desc := $(TARGET_PRODUCT)-$(TARGET_BUILD_VARIANT) $(PLATFORM_VERSION) $(BUILD_ID) $(BUILD_NUMBER) $(BUILD_VERSION_TAGS)
 $(INSTALLED_BUILD_PROP_TARGET): PRIVATE_BUILD_DESC := $(build_desc)
 
 # The string used to uniquely identify the combined build and product; used by the OTA server.
@@ -143,7 +123,7 @@ ifeq (,$(strip $(BUILD_FINGERPRINT)))
   else
     BF_BUILD_NUMBER := $(BUILD_NUMBER)
   endif
-  BUILD_FINGERPRINT := $(PRODUCT_BRAND)/$(TARGET_VENDOR_PRODUCT_NAME)/$(TARGET_VENDOR_DEVICE_NAME):$(PLATFORM_VERSION)/$(BUILD_ID)/$(TARGET_VENDOR_RELEASE_BUILD_ID):$(TARGET_BUILD_VARIANT)/$(BUILD_VERSION_TAGS)
+  BUILD_FINGERPRINT := $(PRODUCT_BRAND)/$(TARGET_PRODUCT)/$(TARGET_DEVICE):$(PLATFORM_VERSION)/$(BUILD_ID)/$(BF_BUILD_NUMBER):$(TARGET_BUILD_VARIANT)/$(BUILD_VERSION_TAGS)
 endif
 ifneq ($(words $(BUILD_FINGERPRINT)),1)
   $(error BUILD_FINGERPRINT cannot contain spaces: "$(BUILD_FINGERPRINT)")
@@ -225,9 +205,9 @@ ifneq ($(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_OEM_PROPERTIES),)
 		echo "import /oem/oem.prop $(prop)" >> $@;)
 endif
 	$(hide) TARGET_BUILD_TYPE="$(TARGET_BUILD_VARIANT)" \
-			TARGET_DEVICE="$(TARGET_VENDOR_DEVICE_NAME)" \
+			TARGET_DEVICE="$(TARGET_DEVICE)" \
 			BS_DEVICE="$(TARGET_DEVICE)" \
-			PRODUCT_NAME="$(TARGET_VENDOR_PRODUCT_NAME)" \
+			PRODUCT_NAME="$(TARGET_PRODUCT)" \
 			PRODUCT_BRAND="$(PRODUCT_BRAND)" \
 			PRODUCT_DEFAULT_LANGUAGE="$(call default-locale-language,$(PRODUCT_LOCALES))" \
 			PRODUCT_DEFAULT_REGION="$(call default-locale-region,$(PRODUCT_LOCALES))" \
@@ -272,6 +252,9 @@ endif
 	$(hide) $(foreach line,$(ADDITIONAL_BUILD_PROPERTIES), \
 		echo "$(line)" >> $@;)
 	$(hide) build/tools/post_process_props.py $@ "$(PRODUCT_PROPERTY_UBER_OVERRIDES)" $(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_SYSTEM_PROPERTY_BLACKLIST)
+ifdef EXTENDED_POST_PROCESS_PROPS
+	$(hide) $(EXTENDED_POST_PROCESS_PROPS) $@
+endif
 
 build_desc :=
 
@@ -394,9 +377,6 @@ endif
 # exist with the suffixes ".x509.pem" and ".pk8".
 DEFAULT_KEY_CERT_PAIR := $(DEFAULT_SYSTEM_DEV_CERTIFICATE)
 
-ifneq ($(OTA_PACKAGE_SIGNING_KEY),)
-    DEFAULT_KEY_CERT_PAIR := $(OTA_PACKAGE_SIGNING_KEY)
-endif
 
 # Rules that need to be present for the all targets, even
 # if they don't do anything.
@@ -755,6 +735,8 @@ $(if $(INTERNAL_USERIMAGES_EXT_VARIANT),$(hide) echo "fs_type=$(INTERNAL_USERIMA
 $(if $(BOARD_SYSTEMIMAGE_PARTITION_SIZE),$(hide) echo "system_size=$(BOARD_SYSTEMIMAGE_PARTITION_SIZE)" >> $(1))
 $(if $(BOARD_USERDATAIMAGE_FILE_SYSTEM_TYPE),$(hide) echo "userdata_fs_type=$(BOARD_USERDATAIMAGE_FILE_SYSTEM_TYPE)" >> $(1))
 $(if $(BOARD_USERDATAIMAGE_PARTITION_SIZE),$(hide) echo "userdata_size=$(BOARD_USERDATAIMAGE_PARTITION_SIZE)" >> $(1))
+$(if $(BOARD_USERDATAEXTRAIMAGE_PARTITION_SIZE),$(hide) echo "userdataextra_size=$(BOARD_USERDATAEXTRAIMAGE_PARTITION_SIZE)" >> $(1))
+$(if $(BOARD_USERDATAEXTRAIMAGE_PARTITION_NAME),$(hide) echo "userdataextra_name=$(BOARD_USERDATAEXTRAIMAGE_PARTITION_NAME)" >> $(1))
 $(if $(BOARD_CACHEIMAGE_FILE_SYSTEM_TYPE),$(hide) echo "cache_fs_type=$(BOARD_CACHEIMAGE_FILE_SYSTEM_TYPE)" >> $(1))
 $(if $(BOARD_CACHEIMAGE_PARTITION_SIZE),$(hide) echo "cache_size=$(BOARD_CACHEIMAGE_PARTITION_SIZE)" >> $(1))
 $(if $(BOARD_VENDORIMAGE_FILE_SYSTEM_TYPE),$(hide) echo "vendor_fs_type=$(BOARD_VENDORIMAGE_FILE_SYSTEM_TYPE)" >> $(1))
@@ -770,6 +752,16 @@ $(if $(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_SYSTEM_VERITY_PARTITION),$(hide) ech
 $(if $(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_VENDOR_VERITY_PARTITION),$(hide) echo "vendor_verity_block_device=$(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_VENDOR_VERITY_PARTITION)" >> $(1))
 $(if $(2),$(hide) $(foreach kv,$(2),echo "$(kv)" >> $(1);))
 endef
+
+# -----------------------------------------------------------------
+# Utility executables
+
+INTERNAL_UTILITY_FILES := $(filter $(PRODUCT_OUT)/utilities/%, \
+	$(foreach module, $(ALL_MODULES), $(ALL_MODULES.$(module).INSTALLED)) \
+	$(ALL_DEFAULT_INSTALLED_MODULES))
+
+.PHONY: utilities
+utilities: $(INTERNAL_UTILITY_FILES)
 
 # -----------------------------------------------------------------
 # Recovery image
@@ -813,7 +805,7 @@ endif
 # can be overridden for a particular device by putting a font.png in
 # its private recovery resources.
 
-ifneq (,$(filter 560dpi xxxhdpi xxhdpi xhdpi,$(recovery_density)))
+ifneq (,$(filter xxxhdpi xxhdpi xhdpi,$(recovery_density)))
 recovery_font := $(call project-path-for,recovery)/fonts/18x32.png
 else
 recovery_font := $(call project-path-for,recovery)/fonts/12x22.png
@@ -855,11 +847,6 @@ INTERNAL_RECOVERYIMAGE_ARGS := \
 
 # Assumes this has already been stripped
 ifdef BOARD_KERNEL_CMDLINE
-  ifdef BUILD_ENFORCE_SELINUX
-      ifneq (,$(filter androidboot.selinux=permissive androidboot.selinux=disabled, $(BOARD_KERNEL_CMDLINE)))
-          $(error "Trying to apply non-default selinux settings. Aborting")
-      endif
-  endif
   INTERNAL_RECOVERYIMAGE_ARGS += --cmdline "$(BOARD_KERNEL_CMDLINE)"
 endif
 ifdef BOARD_KERNEL_BASE
@@ -878,16 +865,6 @@ endif
 # build always uses dev-keys for this; release packaging tools will
 # substitute other keys for this one.
 OTA_PUBLIC_KEYS := $(DEFAULT_SYSTEM_DEV_CERTIFICATE).x509.pem
-
-ifneq ($(OTA_PACKAGE_SIGNING_KEY),)
-    OTA_PUBLIC_KEYS := $(OTA_PACKAGE_SIGNING_KEY).x509.pem
-    PRODUCT_EXTRA_RECOVERY_KEYS := $(DEFAULT_SYSTEM_DEV_CERTIFICATE)
-else
-    PRODUCT_EXTRA_RECOVERY_KEYS += \
-        build/target/product/security/cm \
-        build/target/product/security/cm-devkey \
-        build/target/product/security/bacon
-endif
 
 # Generate a file containing the keys that will be read by the
 # recovery binary.
@@ -915,7 +892,7 @@ $(recovery_ramdisk): $(MKBOOTFS) $(MINIGZIP) $(RECOVERYIMAGE_EXTRA_DEPS) \
 	$(hide) mkdir -p $(TARGET_RECOVERY_OUT)
 	$(hide) mkdir -p $(TARGET_RECOVERY_ROOT_OUT)/etc $(TARGET_RECOVERY_ROOT_OUT)/tmp
 	@echo -e ${CL_CYN}"Copying baseline ramdisk..."${CL_RST}
-	$(hide) cp -R $(TARGET_ROOT_OUT)/ $(TARGET_RECOVERY_OUT)
+	$(hide) cp -R $(TARGET_ROOT_OUT) $(TARGET_RECOVERY_OUT)
 	@echo -e ${CL_CYN}"Modifying ramdisk contents..."${CL_RST}
 	$(hide) rm -f $(TARGET_RECOVERY_ROOT_OUT)/init*.rc
 	$(hide) cp -f $(recovery_initrc) $(TARGET_RECOVERY_ROOT_OUT)/
@@ -924,7 +901,6 @@ $(recovery_ramdisk): $(MKBOOTFS) $(MINIGZIP) $(RECOVERYIMAGE_EXTRA_DEPS) \
 	$(hide) -cp $(TARGET_ROOT_OUT)/init.recovery.*.rc $(TARGET_RECOVERY_ROOT_OUT)/
 	$(hide) cp -f $(recovery_binary) $(TARGET_RECOVERY_ROOT_OUT)/sbin/
 	$(hide) mkdir -p $(TARGET_RECOVERY_ROOT_OUT)/res
-	$(hide) rm -rf $(TARGET_RECOVERY_ROOT_OUT)/res/*
 	$(hide) cp -rf $(recovery_resources_common)/* $(TARGET_RECOVERY_ROOT_OUT)/res
 	$(hide) cp -f $(recovery_font) $(TARGET_RECOVERY_ROOT_OUT)/res/images/font.png
 	$(hide) $(foreach item,$(recovery_root_private), \
@@ -1256,7 +1232,7 @@ endef
 userdata_tar := $(PRODUCT_OUT)/userdata.tar
 INSTALLED_USERDATATARBALL_TARGET := $(userdata_tar).bz2
 $(INSTALLED_USERDATATARBALL_TARGET): PRIVATE_USERDATA_TAR := $(userdata_tar)
-$(INSTALLED_USERDATATARBALL_TARGET): $(FS_GET_STATS) $(INTERNAL_USERDATAIMAGE_FILES)
+$(INSTALLED_USERDATATARBALL_TARGET): $(FS_GET_STATS)/META/boot $(INTERNAL_USERDATAIMAGE_FILES)
 	$(build-userdatatarball-target)
 
 .PHONY: userdatatarball-nodeps
@@ -1394,12 +1370,8 @@ built_ota_tools := \
 	$(call intermediates-dir-for,EXECUTABLES,applypatch)/applypatch \
 	$(call intermediates-dir-for,EXECUTABLES,applypatch_static)/applypatch_static \
 	$(call intermediates-dir-for,EXECUTABLES,check_prereq)/check_prereq \
-	$(call intermediates-dir-for,EXECUTABLES,sqlite3)/sqlite3
-ifeq ($(TARGET_ARCH),arm64)
-	built_ota_tools += $(call intermediates-dir-for,EXECUTABLES,updater,,,32)/updater
-else
-	built_ota_tools += $(call intermediates-dir-for,EXECUTABLES,updater)/updater
-endif
+	$(call intermediates-dir-for,EXECUTABLES,sqlite3)/sqlite3 \
+	$(call intermediates-dir-for,EXECUTABLES,updater)/updater
 $(BUILT_TARGET_FILES_PACKAGE): PRIVATE_OTA_TOOLS := $(built_ota_tools)
 
 $(BUILT_TARGET_FILES_PACKAGE): PRIVATE_RECOVERY_API_VERSION := $(RECOVERY_API_VERSION)
@@ -1457,9 +1429,6 @@ ifdef INSTALLED_2NDBOOTLOADER_TARGET
 	$(hide) $(ACP) \
 		$(INSTALLED_2NDBOOTLOADER_TARGET) $(zip_root)/RECOVERY/second
 endif
-ifdef BOARD_KERNEL_TAGS_OFFSET
-	$(hide) echo "$(BOARD_KERNEL_TAGS_OFFSET)" > $(zip_root)/RECOVERY/tags_offset
-endif
 ifdef BOARD_KERNEL_CMDLINE
 	$(hide) echo "$(BOARD_KERNEL_CMDLINE)" > $(zip_root)/RECOVERY/cmdline
 endif
@@ -1482,16 +1451,19 @@ endif
 	$(hide) mkdir -p $(zip_root)/BOOT
 	$(hide) $(call package_files-copy-root, \
 		$(TARGET_ROOT_OUT),$(zip_root)/BOOT/RAMDISK)
+ifdef INSTALLED_RAMDISK_TARGET
+	$(hide) $(ACP) $(INSTALLED_RAMDISK_TARGET) $(zip_root)/BOOT/ramdisk.img
+endif
 ifdef INSTALLED_KERNEL_TARGET
 	$(hide) $(ACP) $(INSTALLED_KERNEL_TARGET) $(zip_root)/BOOT/kernel
+endif
+ifdef INSTALLED_BOOTLOADER_MODULE
+	$(hide) $(ACP) \
+		$(INSTALLED_BOOTLOADER_MODULE) $(zip_root)/BOOT/bootloader
 endif
 ifdef INSTALLED_2NDBOOTLOADER_TARGET
 	$(hide) $(ACP) \
 		$(INSTALLED_2NDBOOTLOADER_TARGET) $(zip_root)/BOOT/second
-endif
-
-ifdef BOARD_KERNEL_TAGS_OFFSET
-	$(hide) echo "$(BOARD_KERNEL_TAGS_OFFSET)" > $(zip_root)/BOOT/tags_offset
 endif
 ifdef BOARD_KERNEL_CMDLINE
 	$(hide) echo "$(BOARD_KERNEL_CMDLINE)" > $(zip_root)/BOOT/cmdline
@@ -1568,7 +1540,9 @@ ifdef PRODUCT_EXTRA_RECOVERY_KEYS
 	$(hide) echo "extra_recovery_keys=$(PRODUCT_EXTRA_RECOVERY_KEYS)" >> $(zip_root)/META/misc_info.txt
 endif
 	$(hide) echo 'mkbootimg_args=$(BOARD_MKBOOTIMG_ARGS)' >> $(zip_root)/META/misc_info.txt
+ifneq ($(USE_SET_METADATA),false)
 	$(hide) echo "use_set_metadata=1" >> $(zip_root)/META/misc_info.txt
+endif
 	$(hide) echo "multistage_support=1" >> $(zip_root)/META/misc_info.txt
 	$(hide) echo "update_rename_support=1" >> $(zip_root)/META/misc_info.txt
 ifneq ($(OEM_THUMBPRINT_PROPERTIES),)
@@ -1579,11 +1553,7 @@ ifdef BUILD_NO
 	$(hide) echo "build_number=$(BUILD_NO)" >> $(zip_root)/META/misc_info.txt
 endif
 	$(call generate-userimage-prop-dictionary, $(zip_root)/META/misc_info.txt)
-ifeq ($(TARGET_RELEASETOOL_MAKE_RECOVERY_PATCH_SCRIPT),)
 	$(hide) ./build/tools/releasetools/make_recovery_patch $(zip_root) $(zip_root)
-else
-	$(hide) $(TARGET_RELEASETOOL_MAKE_RECOVERY_PATCH_SCRIPT) $(zip_root) $(zip_root)
-endif
 ifdef PRODUCT_DEFAULT_DEV_CERTIFICATE
 	$(hide) build/tools/getb64key.py $(PRODUCT_DEFAULT_DEV_CERTIFICATE).x509.pem > $(zip_root)/META/releasekey.txt
 else
@@ -1631,6 +1601,9 @@ else
     OTA_FROM_TARGET_SCRIPT := $(TARGET_RELEASETOOL_OTA_FROM_TARGET_SCRIPT)
 endif
 
+BOOT_ZIP_FROM_IMAGE_SCRIPT := ./build/tools/releasetools/boot_flash_from_image
+KERNEL_PATH := $(TARGET_KERNEL_SOURCE)/arch/arm/configs/$(TARGET_KERNEL_CONFIG)
+
 ifeq ($(WITH_GMS),true)
     $(INTERNAL_OTA_PACKAGE_TARGET): backuptool := false
 else
@@ -1641,17 +1614,20 @@ else
 endif
 endif
 
+ifeq ($(TARGET_UNIFIED_DEVICE),)
+    $(INTERNAL_OTA_PACKAGE_TARGET): override_prop := false
+else
+    $(INTERNAL_OTA_PACKAGE_TARGET): override_prop := true
+endif
+
+ifneq ($(BS_BUILD),)
+BS_TARGET_PACKAGE := $(PRODUCT_OUT)/$(BS_MOD_VERSION).zip
+endif
+
 ifeq ($(TARGET_OTA_ASSERT_DEVICE),)
     $(INTERNAL_OTA_PACKAGE_TARGET): override_device := auto
 else
     $(INTERNAL_OTA_PACKAGE_TARGET): override_device := $(TARGET_OTA_ASSERT_DEVICE)
-endif
-
-ifneq ($(TARGET_UNIFIED_DEVICE),)
-    $(INTERNAL_OTA_PACKAGE_TARGET): override_prop := --override_prop=true
-    ifeq ($(TARGET_OTA_ASSERT_DEVICE),)
-        $(INTERNAL_OTA_PACKAGE_TARGET): override_device := $(TARGET_DEVICE)
-    endif
 endif
 
 $(INTERNAL_OTA_PACKAGE_TARGET): $(BUILT_TARGET_FILES_PACKAGE) $(DISTTOOLS)
@@ -1659,23 +1635,36 @@ $(INTERNAL_OTA_PACKAGE_TARGET): $(BUILT_TARGET_FILES_PACKAGE) $(DISTTOOLS)
 	@echo "$(override_device)" > $(PRODUCT_OUT)/ota_override_device
 	@echo -e ${CL_YLW}"Package OTA:"${CL_RST}" $@"
 	$(hide) MKBOOTIMG=$(MKBOOTIMG) \
+	   CUSTOM_BOOTING_MK=$(BOARD_CUSTOM_BOOTIMG_MK) \
 	   $(OTA_FROM_TARGET_SCRIPT) -v \
-	   --block \
+	   $(if $(BS_BUILD), --block) \
 	   -p $(HOST_OUT) \
 	   -k $(KEY_CERT_PAIR) \
-	   --backup=$(backuptool) \
-	   --override_device=$(override_device) $(override_prop) \
 	   $(if $(OEM_OTA_CONFIG), -o $(OEM_OTA_CONFIG)) \
+	   --backup=$(backuptool) \
+	   --override_prop=$(override_prop) \
 	   $(BUILT_TARGET_FILES_PACKAGE) $@
 
-BS_TARGET_PACKAGE := $(PRODUCT_OUT)/$(BS_VERSION).zip
-
-.PHONY: otapackage bacon
+.PHONY: otapackage bacon bootzip
 otapackage: $(INTERNAL_OTA_PACKAGE_TARGET)
-bacon: otapackage
+
+bacon: check_bacon otapackage
+ifneq ($(BS_BUILD),)
 	$(hide) ln -f $(INTERNAL_OTA_PACKAGE_TARGET) $(BS_TARGET_PACKAGE)
 	$(hide) $(MD5SUM) $(BS_TARGET_PACKAGE) > $(BS_TARGET_PACKAGE).md5sum
-	@echo -e ${CL_CYN}"Package Complete: $(BS_TARGET_PACKAGE)"${CL_RST}
+	@echo -e "Package Complete: $(BS_TARGET_PACKAGE)"
+endif
+
+check_bacon:
+ifneq ($(TARGET_CUSTOM_RELEASETOOL),)
+        $(error TARGET_CUSTOM_RELEASETOOL is deprecated)
+endif
+
+bootzip: bootimage
+	$(BOOT_ZIP_FROM_IMAGE_SCRIPT) \
+	   $(recovery_fstab) \
+	   $(OUT) \
+	   $(TARGET_DEVICE)
 
 endif    # recovery_fstab is defined
 endif    # TARGET_NO_KERNEL != true
@@ -1702,6 +1691,7 @@ endif
 $(INTERNAL_UPDATE_PACKAGE_TARGET): $(BUILT_TARGET_FILES_PACKAGE) $(DISTTOOLS)
 	@echo -e ${CL_YLW}"Package:"${CL_RST}" $@"
 	$(hide) MKBOOTIMG=$(MKBOOTIMG) \
+	   CUSTOM_BOOTING_MK=$(BOARD_CUSTOM_BOOTIMG_MK) \
 	   $(IMG_FROM_TARGET_SCRIPT) -v \
 	   -p $(HOST_OUT) \
 	   $(BUILT_TARGET_FILES_PACKAGE) $@
@@ -1922,6 +1912,7 @@ $(INTERNAL_SDK_TARGET): $(deps)
 		$(HOST_OUT_EXECUTABLES)/atree \
 		$(addprefix -f ,$(PRIVATE_INPUT_FILES)) \
 			-m $(PRIVATE_DEP_FILE) \
+			-I / \
 			-I . \
 			-I $(PRODUCT_OUT) \
 			-I $(HOST_OUT) \

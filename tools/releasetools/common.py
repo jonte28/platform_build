@@ -143,8 +143,6 @@ def LoadInfoDict(input):
   if "fstab_version" not in d:
     d["fstab_version"] = "1"
 
-  if "device_type" not in d:
-    d["device_type"] = "MMC"
   try:
     data = read_helper("META/imagesizes.txt")
     for line in data.split("\n"):
@@ -172,7 +170,7 @@ def LoadInfoDict(input):
   makeint("boot_size")
   makeint("fstab_version")
 
-  d["fstab"] = LoadRecoveryFSTab(read_helper, d["fstab_version"], d["device_type"])
+  d["fstab"] = LoadRecoveryFSTab(read_helper, d["fstab_version"])
   d["build.prop"] = LoadBuildProp(read_helper)
   return d
 
@@ -194,7 +192,7 @@ def LoadDictionaryFromLines(lines):
       d[name] = value
   return d
 
-def LoadRecoveryFSTab(read_helper, fstab_version, type):
+def LoadRecoveryFSTab(read_helper, fstab_version):
   class Partition(object):
     pass
 
@@ -210,7 +208,7 @@ def LoadRecoveryFSTab(read_helper, fstab_version, type):
       line = line.strip()
       if not line or line.startswith("#"): continue
       pieces = line.split()
-      if not (3 <= len(pieces) <= 4):
+      if not (3 <= len(pieces) <= 9):
         raise ValueError("malformed recovery.fstab line: \"%s\"" % (line,))
 
       p = Partition()
@@ -219,7 +217,7 @@ def LoadRecoveryFSTab(read_helper, fstab_version, type):
       p.device = pieces[2]
       p.length = 0
       options = None
-      if len(pieces) >= 4:
+      if len(pieces) >= 4 and pieces[3] != 'NULL':
         if pieces[3].startswith("/"):
           p.device2 = pieces[3]
           if len(pieces) >= 5:
@@ -345,11 +343,6 @@ def BuildBootableImage(sourcedir, fs_config_file, info_dict=None):
       cmd.append("--tags-addr")
       cmd.append(open(fn).read().rstrip("\n"))
 
-    fn = os.path.join(sourcedir, "tags_offset")
-    if os.access(fn, os.F_OK):
-      cmd.append("--tags_offset")
-      cmd.append(open(fn).read().rstrip("\n"))
-
     fn = os.path.join(sourcedir, "ramdisk_offset")
     if os.access(fn, os.F_OK):
       cmd.append("--ramdisk_offset")
@@ -401,6 +394,13 @@ def GetBootableImage(name, prebuilt_name, unpack_dir, tree_subdir,
   'unpack_dir'/'tree_subdir'."""
 
   prebuilt_path = os.path.join(unpack_dir, "BOOTABLE_IMAGES", prebuilt_name)
+  prebuilt_dir = os.path.join(unpack_dir, "BOOTABLE_IMAGES")
+  prebuilt_path = os.path.join(prebuilt_dir, prebuilt_name)
+  custom_bootimg_mk = os.getenv('CUSTOM_BOOTIMG_MK')
+  if custom_bootimg_mk:
+    bootimage_path = os.path.join(os.getenv('OUT'), "boot.img")
+    os.mkdir(prebuilt_dir)
+    shutil.copyfile(bootimage_path, prebuilt_path)
   if os.path.exists(prebuilt_path):
     print "using prebuilt %s from BOOTABLE_IMAGES..." % (prebuilt_name,)
     return File.FromLocalFile(name, prebuilt_path)
@@ -434,7 +434,6 @@ def UnzipTemp(filename, pattern=None):
   OPTIONS.tempfiles.append(tmp)
 
   def unzip_to_dir(filename, dirname):
-    subprocess.call(["rm", "-rf", dirname + filename, "targetfiles-*"])
     cmd = ["unzip", "-o", "-q", filename, "-d", dirname]
     if pattern is not None:
       cmd.append(pattern)
@@ -562,6 +561,7 @@ def CheckSize(data, target, info_dict):
   fs_type = None
   limit = None
   if info_dict["fstab"]:
+    if mount_point == "/userdata_extra": mount_point = "/data"
     if mount_point == "/userdata": mount_point = "/data"
     p = info_dict["fstab"][mount_point]
     fs_type = p.fs_type
@@ -1134,10 +1134,8 @@ DataImage = blockimgdiff.DataImage
 PARTITION_TYPES = { "yaffs2": "MTD", "mtd": "MTD",
                     "ext4": "EMMC", "emmc": "EMMC",
                     "f2fs": "EMMC",
-                    "ext2": "EMMC",
-                    "ext3": "EMMC",
-                    "vfat": "EMMC" }
-
+                    "bml": "BML", "ext2": "EMMC",
+                    "ext3": "EMMC", "vfat": "EMMC"}
 def GetTypeAndDevice(mount_point, info):
   fstab = info["fstab"]
   if fstab:

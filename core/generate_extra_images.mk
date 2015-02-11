@@ -90,7 +90,7 @@ include device/qcom/common/dtbtool/Android.mk
 endif
 
 ifeq ($(strip $(TARGET_CUSTOM_DTBTOOL)),)
-DTBTOOL_NAME := dtbToolCM
+DTBTOOL_NAME := dtbTool
 else
 DTBTOOL_NAME := $(TARGET_CUSTOM_DTBTOOL)
 endif
@@ -135,6 +135,35 @@ $(INSTALLED_1G_USERDATAIMAGE_TARGET): $(INSTALLED_USERDATAIMAGE_TARGET)
 
 ALL_DEFAULT_INSTALLED_MODULES += $(INSTALLED_1G_USERDATAIMAGE_TARGET)
 ALL_MODULES.$(LOCAL_MODULE).INSTALLED += $(INSTALLED_1G_USERDATAIMAGE_TARGET)
+
+endif
+
+
+#----------------------------------------------------------------------
+# Generate extra userdata images (for variants with multiple mmc sizes)
+#----------------------------------------------------------------------
+ifneq ($(BOARD_USERDATAEXTRAIMAGE_PARTITION_SIZE),)
+
+ifndef BOARD_USERDATAEXTRAIMAGE_PARTITION_NAME
+  BOARD_USERDATAEXTRAIMAGE_PARTITION_NAME := extra
+endif
+
+BUILT_USERDATAEXTRAIMAGE_TARGET := $(PRODUCT_OUT)/userdata_$(BOARD_USERDATAEXTRAIMAGE_PARTITION_NAME).img
+
+define build-userdataextraimage-target
+    $(call pretty,"Target EXTRA userdata fs image: $(INSTALLED_USERDATAEXTRAIMAGE_TARGET)")
+    @mkdir -p $(TARGET_OUT_DATA)
+    $(hide) $(MKEXTUSERIMG) -s $(TARGET_OUT_DATA) $@ ext4 data $(BOARD_USERDATAEXTRAIMAGE_PARTITION_SIZE)
+    $(hide) chmod a+r $@
+    $(hide) $(call assert-max-image-size,$@,$(BOARD_USERDATAEXTRAIMAGE_PARTITION_SIZE),yaffs)
+endef
+
+INSTALLED_USERDATAEXTRAIMAGE_TARGET := $(BUILT_USERDATAEXTRAIMAGE_TARGET)
+$(INSTALLED_USERDATAEXTRAIMAGE_TARGET): $(INSTALLED_USERDATAIMAGE_TARGET)
+	$(build-userdataextraimage-target)
+
+ALL_DEFAULT_INSTALLED_MODULES += $(INSTALLED_USERDATAEXTRAIMAGE_TARGET)
+ALL_MODULES.$(LOCAL_MODULE).INSTALLED += $(INSTALLED_USERDATAEXTRAIMAGE_TARGET)
 
 endif
 
