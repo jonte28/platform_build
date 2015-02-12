@@ -45,7 +45,7 @@ if not hasattr(__builtins__, 'xrange'):
 # Parse the command line
 parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, description=textwrap.dedent('''\
     repopick.py is a utility to simplify the process of cherry picking
-    patches from SlimRoms's Gerrit instance.
+    patches from CyanogenMod's Gerrit instance.
 
     Given a list of change numbers, repopick will cd into the project path
     and cherry pick the latest patch available.
@@ -186,11 +186,11 @@ while(True):
     ppaths = re.split('\s*:\s*', pline.decode())
     project_name_to_path[ppaths[1]] = ppaths[0]
 
-# Get all commits for a specified topic
-if args.topic:
-    url = 'http://gerrit.slimroms.net/changes/?q=topic:%s' % args.topic
+# Get all commits for a specified query
+def fetch_query(query):
+    url = 'http://review.cyanogenmod.org/changes/?q=%s' % query
     if args.verbose:
-        print('Fetching all commits from topic: %s\n' % args.topic)
+        print('Fetching all commits using query: %s\n' % query)
     f = urllib.request.urlopen(url)
     d = f.read().decode("utf-8")
     if args.verbose:
@@ -237,10 +237,14 @@ for change in args.change_number:
     # gerrit returns two lines, a magic string and then valid JSON:
     #   )]}'
     #   [ ... valid JSON ... ]
-    url = 'https://gerrit.slimroms.net/changes/?q=%s&o=CURRENT_REVISION&o=CURRENT_COMMIT&pp=0' % change
+    url = 'http://review.cyanogenmod.org/changes/?q={change}&o={query_revision}&o=CURRENT_COMMIT&pp=0'.format(change=change, query_revision=query_revision)
     if args.verbose:
         print('Fetching from: %s\n' % url)
-    f = urllib.request.urlopen(url)
+    try:
+        f = urllib.request.urlopen(url)
+    except urllib.error.URLError:
+        sys.stderr.write('ERROR: Server reported an error, or cannot be reached\n')
+        sys.exit(1)
     d = f.read().decode("utf-8")
     if args.verbose:
         print('Result from request:\n' + d)
