@@ -1190,8 +1190,16 @@ $(hide) ldir=$(PRIVATE_INTERMEDIATES_DIR)/WHOLE/$(basename $(notdir $(1)))_objs;
 
 endef
 
+# $(1): the full path of the source static library.
+define extract-and-include-whole-static-libs-first
+$(if $(strip $(1)),
+@echo "preparing StaticLib: $(PRIVATE_MODULE) [including $(strip $(1))]"
+$(hide) cp $(1) $@)
+endef
+
 define extract-and-include-target-whole-static-libs
-$(foreach lib,$(PRIVATE_ALL_WHOLE_STATIC_LIBRARIES), \
+$(call extract-and-include-whole-static-libs-first, $(firstword $(PRIVATE_ALL_WHOLE_STATIC_LIBRARIES)))
+$(foreach lib,$(wordlist 2,999,$(PRIVATE_ALL_WHOLE_STATIC_LIBRARIES)), \
     $(call _extract-and-include-single-target-whole-static-lib, $(lib)))
 endef
 
@@ -1228,7 +1236,8 @@ $(hide) ldir=$(PRIVATE_INTERMEDIATES_DIR)/WHOLE/$(basename $(notdir $(1)))_objs;
 endef
 
 define extract-and-include-host-whole-static-libs
-$(foreach lib,$(PRIVATE_ALL_WHOLE_STATIC_LIBRARIES), \
+$(call extract-and-include-whole-static-libs-first, $(firstword $(PRIVATE_ALL_WHOLE_STATIC_LIBRARIES)))
+$(foreach lib,$(wordlist 2,999,$(PRIVATE_ALL_WHOLE_STATIC_LIBRARIES)), \
     $(call _extract-and-include-single-host-whole-static-lib, $(lib)))
 endef
 
@@ -1298,9 +1307,7 @@ endef
 #echo >>$@.vers " local:"; \
 #echo >>$@.vers "  *;"; \
 #echo >>$@.vers "};"; \
-
 #	-Wl,--version-script=$@.vers \
-
 # ld just seems to be so finicky with command order that we allow
 # it to be overriden en-masse see combo/linux-arm.make for an example.
 ifneq ($(TARGET_CUSTOM_LD_COMMAND),true)

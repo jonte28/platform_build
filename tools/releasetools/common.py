@@ -143,6 +143,8 @@ def LoadInfoDict(input):
   if "fstab_version" not in d:
     d["fstab_version"] = "1"
 
+  if "device_type" not in d:
+    d["device_type"] = "MMC"
   try:
     data = read_helper("META/imagesizes.txt")
     for line in data.split("\n"):
@@ -170,7 +172,7 @@ def LoadInfoDict(input):
   makeint("boot_size")
   makeint("fstab_version")
 
-  d["fstab"] = LoadRecoveryFSTab(read_helper, d["fstab_version"])
+  d["fstab"] = LoadRecoveryFSTab(read_helper, d["fstab_version"], d["device_type"])
   d["build.prop"] = LoadBuildProp(read_helper)
   return d
 
@@ -192,7 +194,7 @@ def LoadDictionaryFromLines(lines):
       d[name] = value
   return d
 
-def LoadRecoveryFSTab(read_helper, fstab_version):
+def LoadRecoveryFSTab(read_helper, fstab_version, type):
   class Partition(object):
     pass
 
@@ -208,7 +210,7 @@ def LoadRecoveryFSTab(read_helper, fstab_version):
       line = line.strip()
       if not line or line.startswith("#"): continue
       pieces = line.split()
-      if not (3 <= len(pieces) <= 9):
+      if not (3 <= len(pieces) <= 4):
         raise ValueError("malformed recovery.fstab line: \"%s\"" % (line,))
 
       p = Partition()
@@ -217,7 +219,7 @@ def LoadRecoveryFSTab(read_helper, fstab_version):
       p.device = pieces[2]
       p.length = 0
       options = None
-      if len(pieces) >= 4 and pieces[3] != 'NULL':
+      if len(pieces) >= 4:
         if pieces[3].startswith("/"):
           p.device2 = pieces[3]
           if len(pieces) >= 5:
@@ -343,6 +345,11 @@ def BuildBootableImage(sourcedir, fs_config_file, info_dict=None):
       cmd.append("--tags-addr")
       cmd.append(open(fn).read().rstrip("\n"))
 
+    fn = os.path.join(sourcedir, "tags_offset")
+    if os.access(fn, os.F_OK):
+      cmd.append("--tags_offset")
+      cmd.append(open(fn).read().rstrip("\n"))
+
     fn = os.path.join(sourcedir, "ramdisk_offset")
     if os.access(fn, os.F_OK):
       cmd.append("--ramdisk_offset")
@@ -394,13 +401,6 @@ def GetBootableImage(name, prebuilt_name, unpack_dir, tree_subdir,
   'unpack_dir'/'tree_subdir'."""
 
   prebuilt_path = os.path.join(unpack_dir, "BOOTABLE_IMAGES", prebuilt_name)
-  prebuilt_dir = os.path.join(unpack_dir, "BOOTABLE_IMAGES")
-  prebuilt_path = os.path.join(prebuilt_dir, prebuilt_name)
-  custom_bootimg_mk = os.getenv('CUSTOM_BOOTIMG_MK')
-  if custom_bootimg_mk:
-    bootimage_path = os.path.join(os.getenv('OUT'), "boot.img")
-    os.mkdir(prebuilt_dir)
-    shutil.copyfile(bootimage_path, prebuilt_path)
   if os.path.exists(prebuilt_path):
     print "using prebuilt %s from BOOTABLE_IMAGES..." % (prebuilt_name,)
     return File.FromLocalFile(name, prebuilt_path)
@@ -422,10 +422,8 @@ def GetBootableImage(name, prebuilt_name, unpack_dir, tree_subdir,
 
 def UnzipTemp(filename, pattern=None):
   """Unzip the given archive into a temporary directory and return the name.
-
   If filename is of the form "foo.zip+bar.zip", unzip foo.zip into a
   temp dir, then unzip bar.zip into that_dir/BOOTABLE_IMAGES.
-
   Returns (tempdir, zipobj) where zipobj is a zipfile.ZipFile (of the
   main file), open for reading.
   """
@@ -434,6 +432,7 @@ def UnzipTemp(filename, pattern=None):
   OPTIONS.tempfiles.append(tmp)
 
   def unzip_to_dir(filename, dirname):
+    subprocess.call(["rm", "-rf", dirname + filename, "targetfiles-*"])
     cmd = ["unzip", "-o", "-q", filename, "-d", dirname]
     if pattern is not None:
       cmd.append(pattern)
@@ -508,10 +507,8 @@ def SignFile(input_name, output_name, key, password, align=None,
   """Sign the input_name zip/jar/apk, producing output_name.  Use the
   given key and password (the latter may be None if the key does not
   have a password.
-
   If align is an integer > 1, zipalign is run to align stored files in
   the output zip on 'align'-byte boundaries.
-
   If whole_file is true, use the "-w" option to SignApk to embed a
   signature that covers the whole file in the archive comment of the
   zip file.
@@ -561,7 +558,6 @@ def CheckSize(data, target, info_dict):
   fs_type = None
   limit = None
   if info_dict["fstab"]:
-    if mount_point == "/userdata_extra": mount_point = "/data"
     if mount_point == "/userdata": mount_point = "/data"
     p = info_dict["fstab"][mount_point]
     fs_type = p.fs_type
@@ -616,18 +612,14 @@ COMMON_DOCSTRING = """
   -p  (--path)  <dir>
       Prepend <dir>/bin to the list of places to search for binaries
       run by this script, and expect to find jars in <dir>/framework.
-
   -s  (--device_specific) <file>
       Path to the python module containing device-specific
       releasetools code.
-
   -x  (--extra)  <key=value>
       Add a key/value pair to the 'extras' dict, which device-specific
       extension code may look at.
-
   -v  (--verbose)
       Show command lines being executed.
-
   -h  (--help)
       Display this usage message and exit.
 """
@@ -723,7 +715,6 @@ class PasswordManager(object):
     """Get passwords corresponding to each string in 'items',
     returning a dict.  (The dict may have keys in addition to the
     values in 'items'.)
-
     Uses the passwords in $ANDROID_PW_FILE if available, letting the
     user edit that file to add more needed passwords.  If no editor is
     available, or $ANDROID_PW_FILE isn't define, prompts the user
@@ -1134,8 +1125,10 @@ DataImage = blockimgdiff.DataImage
 PARTITION_TYPES = { "yaffs2": "MTD", "mtd": "MTD",
                     "ext4": "EMMC", "emmc": "EMMC",
                     "f2fs": "EMMC",
-                    "bml": "BML", "ext2": "EMMC",
-                    "ext3": "EMMC", "vfat": "EMMC"}
+                    "ext2": "EMMC",
+                    "ext3": "EMMC",
+                    "vfat": "EMMC" }
+
 def GetTypeAndDevice(mount_point, info):
   fstab = info["fstab"]
   if fstab:
@@ -1166,7 +1159,6 @@ def MakeRecoveryPatch(input_dir, output_sink, recovery_img, boot_img,
   should be efficient.)  Add it to the output zip, along with a shell
   script that is run from init.rc on first boot to actually do the
   patching and install the new recovery image.
-
   recovery_img and boot_img should be File objects for the
   corresponding images.  info should be the dictionary returned by
   common.LoadInfoDict() on the input target_files.
@@ -1201,7 +1193,6 @@ def MakeRecoveryPatch(input_dir, output_sink, recovery_img, boot_img,
 if [ -f /system/etc/recovery-transform.sh ]; then
   exec sh /system/etc/recovery-transform.sh %(recovery_size)d %(recovery_sha1)s %(boot_size)d %(boot_sha1)s
 fi
-
 if ! applypatch -c %(recovery_type)s:%(recovery_device)s:%(recovery_size)d:%(recovery_sha1)s; then
   applypatch %(bonus_args)s %(boot_type)s:%(boot_device)s:%(boot_size)d:%(boot_sha1)s %(recovery_type)s:%(recovery_device)s %(recovery_sha1)s %(recovery_size)d %(boot_sha1)s:/system/recovery-from-boot.p && log -t recovery "Installing new recovery image: succeeded" || log -t recovery "Installing new recovery image: failed"
 else

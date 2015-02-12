@@ -81,6 +81,7 @@ BUILD_MULTI_PREBUILT:= $(BUILD_SYSTEM)/multi_prebuilt.mk
 BUILD_JAVA_LIBRARY:= $(BUILD_SYSTEM)/java_library.mk
 BUILD_STATIC_JAVA_LIBRARY:= $(BUILD_SYSTEM)/static_java_library.mk
 BUILD_HOST_JAVA_LIBRARY:= $(BUILD_SYSTEM)/host_java_library.mk
+BUILD_DROIDDOC:= $(BUILD_SYSTEM)/droiddoc.mk
 BUILD_COPY_HEADERS := $(BUILD_SYSTEM)/copy_headers.mk
 BUILD_NATIVE_TEST := $(BUILD_SYSTEM)/native_test.mk
 BUILD_HOST_NATIVE_TEST := $(BUILD_SYSTEM)/host_native_test.mk
@@ -94,11 +95,6 @@ BUILD_NOTICE_FILE := $(BUILD_SYSTEM)/notice_files.mk
 BUILD_HOST_DALVIK_JAVA_LIBRARY := $(BUILD_SYSTEM)/host_dalvik_java_library.mk
 BUILD_HOST_DALVIK_STATIC_JAVA_LIBRARY := $(BUILD_SYSTEM)/host_dalvik_static_java_library.mk
 
-ifneq ($(ENABLE_DROIDDOC),)
-BUILD_DROIDDOC:= $(BUILD_SYSTEM)/clear_vars.mk
-else
-BUILD_DROIDDOC:= $(BUILD_SYSTEM)/droiddoc.mk
-endif
 
 -include cts/build/config.mk
 
@@ -563,7 +559,7 @@ TARGET_CPU_SMP ?= true
 DEX2OAT_TARGET_ARCH := $(TARGET_ARCH)
 DEX2OAT_TARGET_CPU_VARIANT := $(TARGET_CPU_VARIANT)
 DEX2OAT_TARGET_INSTRUCTION_SET_FEATURES := default
-ifneq (,$(filter $(DEX2OAT_TARGET_CPU_VARIANT),cortex-a7 cortex-a15 krait denver generic))
+ifneq (,$(filter $(DEX2OAT_TARGET_CPU_VARIANT),cortex-a7 cortex-a15 krait denver generic cortex-a53))
   DEX2OAT_TARGET_INSTRUCTION_SET_FEATURES := div
 endif
 
@@ -628,8 +624,18 @@ RS_PREBUILT_CLCORE := prebuilts/sdk/renderscript/lib/$(TARGET_ARCH)/librsrt_$(TA
 RS_PREBUILT_LIBPATH := -L prebuilts/ndk/8/platforms/android-9/arch-$(TARGET_ARCH)/usr/lib
 RS_PREBUILT_COMPILER_RT := prebuilts/sdk/renderscript/lib/$(TARGET_ARCH)/libcompiler_rt.a
 
-ifneq ($(BS_BUILD),)
+# We might want to skip items listed in PRODUCT_COPY_FILES based on
+# various target flags. This is useful for replacing a binary module with one
+# built from source. This should be a list of destination files under $OUT
+#
+TARGET_COPY_FILES_OVERRIDES := \
+    $(addprefix %:, $(strip $(TARGET_COPY_FILES_OVERRIDES)))
 
+ifneq ($(TARGET_COPY_FILES_OVERRIDES),)
+    PRODUCT_COPY_FILES := $(filter-out $(TARGET_COPY_FILES_OVERRIDES), $(PRODUCT_COPY_FILES))
+endif
+
+ifneq ($(BS_BUILD),)
 ## We need to be sure the global selinux policies are included
 ## last, to avoid accidental resetting by device configs
 $(eval include vendor/beanstalk/sepolicy/sepolicy.mk)
