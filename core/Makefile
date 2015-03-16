@@ -1668,7 +1668,7 @@ $(INTERNAL_OTA_PACKAGE_TARGET): $(BUILT_TARGET_FILES_PACKAGE) $(DISTTOOLS)
 	@echo -e ${CL_YLW}"Package OTA:"${CL_RST}" $@"
 	$(hide) MKBOOTIMG=$(MKBOOTIMG) \
 	   $(OTA_FROM_TARGET_SCRIPT) -v \
-	   --block \
+           $(if $(CUSTOM_BUILD),, --block) \
 	   -p $(HOST_OUT) \
 	   -k $(KEY_CERT_PAIR) \
 	   --backup=$(backuptool) \
@@ -1681,10 +1681,9 @@ PAC_TARGET_PACKAGE := $(PRODUCT_OUT)/$(PAC_BUILD_VERSION).zip
 .PHONY: otapackage bacon
 otapackage: $(INTERNAL_OTA_PACKAGE_TARGET)
 bacon: otapackage
-	$(hide) find $(PRODUCT_OUT) -maxdepth 1 -xdev -samefile $(INTERNAL_OTA_PACKAGE_TARGET) | grep -v ota-eng | xargs rm -f
-	$(hide) rm -f $(PRODUCT_OUT)/*.md5sum
 	$(hide) ln -f $(INTERNAL_OTA_PACKAGE_TARGET) $(PAC_TARGET_PACKAGE)
-	$(hide) (cd `dirname $(PAC_TARGET_PACKAGE)` && $(MD5SUM) `basename $(PAC_TARGET_PACKAGE)` > $(PAC_TARGET_PACKAGE).md5sum)
+	$(hide) $(MD5SUM) $(PAC_TARGET_PACKAGE) > $(PAC_TARGET_PACKAGE).md5sum
+	@echo -e ${CL_CYN}""${CL_CYN}
 	@echo -e ""
 	@echo -e ${CL_YLW}" PPPPPPPPPPPPPPPPP                    AAA                         CCCCCCCCCCCCC "${CL_RST}
 	@echo -e ${CL_YLW}" P::::::::::::::::P                  A:::A                     CCC::::::::::::C "${CL_RST}
